@@ -1,3 +1,6 @@
 ARQUIVO_ENTRADA=C:\Users\gabri\Documents\Alstom\ferramenta-cria-tabs-excel\Tabela_Teste.xlsx
-ARQUIVO_SAIDA=C:\Users\gabri\Documents\Alstom\ferramenta-cria-tabs-excel\ouput.xlsx
+ARQUIVO_SAIDA=C:\Users\gabri\Documents\Alstom\ferramenta-cria-tabs-excel\output2.xlsx
+ESTILO_TABELAS=TableStyleMedium27
 
+# Styles list
+# https://docs.devexpress.com/OfficeFileAPI/DevExpress.Spreadsheet.BuiltInTableStyleId
