@@ -2,16 +2,14 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter, column_index_from_string
 import re, traceback, time
 from openpyxl.worksheet.table import Table, TableStyleInfo
-from openpyxl.formula.translate import Translator
-
-
 from openpyxl.utils import range_boundaries
 from openpyxl.worksheet.cell_range import CellRange
 from openpyxl.worksheet.filters import AutoFilter, FilterColumn
 from openpyxl.worksheet.table import Table, TableColumn, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
-# variáveis
+from openpyxl.styles import Font
 
+# variáveis
 aba_principal = 'aba principal'
 tabela_principal = 'TabelaBase'
 cabecalho_linha = '19'
@@ -63,21 +61,28 @@ def remove_table_filters(table: Table, ws: Worksheet) -> None:
         filter_columns.append(FilterColumn(colId=idx, hiddenButton=True, filters=None))
 
 def transform_cell(cell, tab_name):
-    start_value = cell
+    if "SUBTOTAL" in cell:
+        # =SUBTOTAL(106,S1E1_tabelaY[FR])
+        # =SUBTOTAL(109;[FR])
+        list_values = cell.split(',[')
+        new_value = f'{list_values[0]},{tab_name}[{list_values[1]}'
+        return new_value[1:]
+    else:
+        start_value = cell
 
-    list_values = cell.split('[@')
-    formated_values = []
-    for index, value in enumerate(list_values):
+        list_values = cell.split('[@')
+        formated_values = []
+        for index, value in enumerate(list_values):
 
-        if ']' in value:
-            value = value.split(']')[0]
-            old_value = f"[@{value}]"
-            new_value = f"({tab_name}[[#This Row],[{value}]])"
-            formated_values.append([old_value, new_value])
+            if ']' in value:
+                value = value.split(']')[0]
+                old_value = f"[@{value}]"
+                new_value = f"({tab_name}[[#This Row],[{value}]])"
+                formated_values.append([old_value, new_value])
 
-    for value in formated_values:
-        start_value = start_value.replace(value[0], value[1])
-    return start_value[1:]
+        for value in formated_values:
+            start_value = start_value.replace(value[0], value[1])
+        return start_value[1:]
 
 if __name__ == "__main__":
     # Ler o arquivo de entrada
@@ -91,8 +96,6 @@ if __name__ == "__main__":
                         arquivo_entrada = value.strip()
                     elif key.strip() == 'ARQUIVO_SAIDA':
                         arquivo_saida = value.strip()
-                    elif key.strip() == 'ESTILO_TABELAS':
-                        estilo_tabelas = value.strip()
 
         if not arquivo_entrada.endswith('.xlsx'):
             raise ValueError('O arquivo de entrada deve ser um arquivo Excel (.xlsx)')
@@ -134,10 +137,8 @@ if __name__ == "__main__":
         
         # Obter linhas de formatação de colunas
         for linha_excel in ws[range_formatacao_colunas]:
-            linha = []
             for cell in linha_excel:
-                linha.append(cell.value)
-            linha_formatacao_colunas.append(linha)
+                linha_formatacao_colunas.append(cell.value)
 
         # Obter linhas de formatação de colunas
         for linha_excel in ws[range_largura_colunas]:
@@ -146,10 +147,8 @@ if __name__ == "__main__":
 
         # Obter linha de total row
         for linha_excel in ws[range_total_row]:
-            linha = []
             for cell in linha_excel:
-                linha.append(cell.value)
-            linha_total_row.append(linha)
+                linha_total_row.append(cell.value)
 
         print('Criando arquivo de saída...')
         # Começar a escrever no arquivo de saída
@@ -164,6 +163,7 @@ if __name__ == "__main__":
             else:
                 linha_tabela.append(linha)
         tabelas_principais.append(linha_tabela)
+        
                 
         del tabelas_principais[0]
         index_filhos_tabela = -1
@@ -203,17 +203,17 @@ if __name__ == "__main__":
                         lista_posicoes = []
                         for index, cell in enumerate(linhas_posicao_colunas_para_criar[linha_config]):
                             if cell is not None and cell == 'x':
-                                lista_posicoes.append(['x', index, linha_largura_colunas[index]])
+                                lista_posicoes.append(['x', index, linha_largura_colunas[index], linha_formatacao_colunas[index]])
                             elif cell is not None:
                                 lista_posicoes.append([cell, index, linha_largura_colunas[index]])
                         
-                        # print('lista posicoes, ', lista_posicoes)
                         # colocar cabeçalho
                         coluna = coluna_inicial
                         for i, posicao_config in enumerate(lista_posicoes):
                             nova_aba.cell(row=linha_inicial, column=coluna, value=str(cabecalho[lista_posicoes[i][1]]))
                             coluna+= 1
                         
+                        # print('valor coluna inicial', coluna_inicial)
                         linha_inicial_temp = linha_inicial + 1
                         while True:
                             coluna_inicial_temp = coluna_inicial
@@ -226,9 +226,13 @@ if __name__ == "__main__":
                             for i, posicao_config in enumerate(lista_posicoes):
                                 valor = linhas_tabela_principal[index_filhos_tabela][lista_posicoes[i][1]]
                                 if posicao_config[0] != 'x':
-                                    # print(posicao_config[0])
                                     valor = f"'{posicao_config[0]}"
-                                nova_aba.cell(row=linha_inicial_temp, column=coluna_inicial_temp, value=valor)
+                                cel = nova_aba.cell(row=linha_inicial_temp, column=coluna_inicial_temp, value=valor)
+                                # colocando formato na celula
+                                if not "=" in posicao_config[0] and posicao_config[3] is not None:
+                                    cel.number_format = posicao_config[3]
+                                    cel = nova_aba.cell(row=linha_inicial_temp+1, column=coluna_inicial_temp)
+                                    cel.number_format = posicao_config[3]
                                 # definindo largura coluna
                                 nova_aba.column_dimensions[get_column_letter(coluna_inicial_temp)].width = posicao_config[2]
                                 coluna_inicial_temp+= 1
@@ -236,14 +240,37 @@ if __name__ == "__main__":
                             index_filhos_tabela += 1
                             linha_inicial_temp += 1
                         
+                        # colocando total row
+                        coluna_inicial_temp = coluna_inicial
+                        tem_total_row = False
+                        for i, posicao_config in enumerate(lista_posicoes):
+                            valor = f"'{linha_total_row[lista_posicoes[i][1]]}"
+                                # Aplicando Total a linha total
+                            if i == 0:
+                                posicao_coluna_total_text = coluna_inicial_temp
+                                posicao_linha_total_text = linha_inicial_temp
+                            if posicao_config[0] == 'x' or "=" in posicao_config[0]:
+                                if valor is not None and "=" in valor:
+                                    tem_total_row = True
+                                    nova_aba.cell(row=linha_inicial_temp, column=coluna_inicial_temp, value=valor)
+                                coluna_inicial_temp+= 1
+
+                        if tem_total_row:
+                            # nova_aba.cell(row=linha_inicial_temp, column=coluna_inicial_temp, value='Total')
+                            celula = nova_aba.cell(row=posicao_linha_total_text, column=posicao_coluna_total_text, value='Total')
+                            celula.font = Font(bold=True)
+                        else:
+                            linha_inicial_temp -=1
                         print('Aplicando formatação...')
                         range_final = f'{tabela[3]}:{get_column_letter(coluna_backup-1)}{linha_inicial_temp-1}'
                         # print(f"{linha[4]}_{tabela[2]}")
+                        # tab = Table(displayName=f"{linha[4]}_{tabela[2]}", ref=range_final, totalsRowCount=1, totalsRowShown=True)
                         tab = Table(displayName=f"{linha[4]}_{tabela[2]}", ref=range_final)
                         style = TableStyleInfo(
-                            name=estilo_tabelas
+                            name=tabela[1]
                         )  # Alinhar o conteúdo ao topo)
                         tab.tableStyleInfo = style
+                        tab.autofilter = False
                         nova_aba.add_table(tab)
                         for row in nova_aba.iter_rows(min_row=2, max_row=nova_aba.max_row, min_col=1, max_col=nova_aba.max_column):
                             for cell in row:
@@ -260,71 +287,57 @@ if __name__ == "__main__":
                 ws = wb[sheetname]
                 for table in ws.tables.items():
                     tab = ws.tables[table[0]]
-                    remove_table_filters(tab, ws)
-            
-
-                
-                            # try:
-                    #     for autofilter in worksheet.auto_filter.ref:
-                    #         worksheet.auto_filter.ref = None
-                    # except:
-                    #     pass
-                    
-                    # for table in worksheet.tables.values():
-                    #     cabecalho_table = []
-                    #     range_cabecalho = table.ref
-                    #     for i, row in enumerate(worksheet[range_cabecalho]):
-                    #         # lista de fórmulas
-                    #         f_list = []
-                    #         if i == 0:
-                    #             for cell in row:
-                    #                 cabecalho_table.append(cell.value)
-                    #         else:
-                    #             linha = []
-                    #             for f, cell in enumerate(row):
-                    #                 linha.append(cell.value)
-                    #                 if "'=" in str(cell.value):
-                    #                     formula = cell.value
-                    #                     formula = formula.split('[@')
-                    #                     print('formula', cell.value, cabecalho_table)
-                                        
-                                
-                            # break
-                
-
+                    remove_table_filters(tab, ws)    
             else:
-                # print('bateu nesse', index_principal, linha[1])
                 continue            
-                        # print(linha, tabela[2], tabela[3])
         print('Salvando arquivo de saída...')
-        # time.sleep(2)
-        wb.save(arquivo_saida)
+        # wb.save(arquivo_saida)
         
-        wb = load_workbook(arquivo_saida, data_only=True)
+        # wb = load_workbook(arquivo_saida, data_only=True)
         ws = wb[aba_principal]
-        # ws = wb['S1E1']
-        
-        # deu errado
-        # ws['BM21'] = '= 2 *[@qty]'
-        # # deu certo
-        # ws['BM21'] = '= 2 * (S1E1_tabelaXYZ[[#This Row],[qty]])'
+
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             if sheetname != aba_principal:
                 for table in ws.tables.values():
                     cabecalho_table = []
                     range_cabecalho = table.ref
+                    # calculando linha de total
+                    list_range = range_cabecalho.split(':')
+                    coluna_range = re.findall(r'[a-zA-Z]', list_range[1])
+                    coluna_range = "".join(coluna_range).strip()
+                    linha_range = int(''.join(re.findall(r'\d+', list_range[1])))
+                    range_cabecalho = f'{list_range[0]}:{coluna_range}{linha_range+1}'
                     for i, row in enumerate(ws[range_cabecalho]):
                         # lista de fórmulas
+
                         for f, cell in enumerate(row):
-                            # linha.append(cell.value)
                             if "'=" in str(cell.value):
                                 cell.value = transform_cell(cell.value, table.name)
-                #                 break
+                                # print(cell.value)
+                    
+                    table.ref = range_cabecalho
+                    # totalsRowCount=1, totalsRowShown=True
+                    # table.totalsRowCount = 1
+                    # table.totalsRowShown = True
+                    # table.showLastColumn=False
+                    # table.showRowStripes=True
+                    # table.showColumnStripes=True
+                    # table.name = table.name + '1'
+                    # ws.add_table(table)
+
+                        
+                                   
+                #      break
                 #         break
                 # break
+            
+            # ws['AS29'] = '=SUBTOTAL(109,S1E1_tabelaY[FR])'
+            # ws['AS29'] = '=SUBTOTAL(106,S1E1_tabelaY[FR])'
+            # ws['AS29'] = '=SUBTOTAL(106,S1E1_tabelaY[qty;FR])'
+            # ws.cell('AS29').value = '=SUBTOTAL(109,Table1[2011])'
                                 
-
+        
         wb.save(arquivo_saida)
         print('Arquivo criado com sucesso!')
         time.sleep(10)
